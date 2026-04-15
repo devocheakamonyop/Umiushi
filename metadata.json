@@ -1,0 +1,5 @@
+{
+  "name": "Mobile Installation Synthesizer",
+  "description": "環境音をリアルタイムで採集し、微分音和声へと変調するモバイルインスタレーションソフト。",
+  "requestFramePermissions": ["microphone"]
+}

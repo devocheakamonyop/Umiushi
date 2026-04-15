@@ -1,0 +1,61 @@
+インタラクティブ・オーディオエンジン システム仕様書 (v1.1)
+
+1. システム概要
+本システムは、ユーザーの音声入力（マイク）をリアルタイムに解析し、その音高（ピッチ）、音量（エネルギー）、周波数バランスに応じて、動的に音楽的要素（ピアノ和音、ドローン、リズムパターン）を生成・変調するインタラクティブなWeb Audioアプリケーションである。
+
+2. コアアーキテクチャ
+* オーディオ基盤: Web Audio API
+* UI基盤: React, Tailwind CSS, motion/react (Framer Motion), lucide-react
+* 入力: navigator.mediaDevices.getUserMedia によるマイク入力
+* 解析: AnalyserNode によるFFT（高速フーリエ変換）解析
+* 合成: OscillatorNode (Sine, Sawtooth, Triangle), AudioBufferSourceNode (Noise)
+* 信号処理: BiquadFilterNode (Lowpass, Highpass, Lowshelf, Peaking), GainNode, ConvolverNode (Reverb)
+* 制御ループ: requestAnimationFrame による連続的な解析とオーディオイベントのスケジューリング
+
+3. オーディオルーティングとシグナルフロー
+1. 入力信号: マイク入力 -> AnalyserNode -> (ハウリング防止のため出力には接続しない)
+2. 合成レイヤー:
+   * ピアノ和音 (Piano Chords): 動的生成 -> masterGain
+   * アンビエント (Ambient Drone): ブラウンノイズ近似 -> Lowpass Filter -> ambientGain
+   * ノイズレイヤー (Noise Layer): ホワイトノイズ -> Bandpass Filter -> noiseGain
+3. マスターエフェクトチェイン:
+   * 各Gain -> duckingFilter (入力音声帯域の動的カット) -> dryGain / wetGain (Reverb) -> masterHighpass (40Hz以下カット) -> masterLowshelf (40〜300Hzを-2dB減衰) -> audioCtx.destination (最終出力)
+
+4. 入力解析モジュール (analyzeInput)
+* エネルギー (Energy): FFTデータから算出。各種フィルターのカットオフ周波数、オシレーターのゲイン、イベントトリガーの閾値として使用。
+* 主要周波数 (Dominant Frequency): 振幅が最大の周波数ビン。
+* ピッチトラッキング (Input Step): 主要周波数を、基準周波数（C2 = 65.41Hz）に対する相対的な「ステップ数（半音単位）」に変換。
+* 動的エンベロープ: 入力信号の立ち上がりの鋭さ（トランジェント）を追従し、内部変調信号のAttack/Decayタイムを動的に変化させる。
+
+5. 音源合成モジュール
+5.1. ピアノ和音生成 (playPianoChord)
+* 音色設計 (Sine + FM + Noise):
+  * キャリア (Carrier): 基音となるサイン波。
+  * モジュレーター (Modulator): キャリアの1オクターブ上のサイン波。キャリアの周波数を変調（FM合成）。変調指数は設定（fmIndex）で可変。
+  * サブオシレーター (Sub): 1オクターブ下のサイン波。
+  * アタックノイズ: 発音開始から50msのみ、バンドパスフィルターを通したホワイトノイズを鳴らす。
+* エンベロープ: アタックタイム 0ms、リリースタイム 0.48s の指数関数的減衰。
+
+5.2. 和声とボイシング (triggerChordUpdate)
+* トップノートの決定: 設定された確率（trackingProb）で、生成される和音の最高音が入力ピッチと一致する。
+* 内声 (Inner Voices): トップノートの下に3つの内声が生成され、ターゲットとなる和音の響きに向けてゆっくりとモーフィングする。
+
+5.3. アンビエント・ドローン & ノイズレイヤー
+* ドローン: ブラウンノイズ近似。入力の低域エネルギーによってカットオフが揺らぐ。音量は droneLevel で可変。
+* ノイズ: ホワイトノイズ＋バンドパスフィルター。音量は noiseLevel で可変。
+
+6. カスタマイズ機能 (Settings Panel)
+ユーザーUIから以下のパラメータをリアルタイムに調整可能（AudioEngineConfig）。
+* Musical & Rhythm:
+  * Tempo (BPM): 60〜180
+  * Rhythm Pattern: Tresillo, 4-on-the-floor, Random, None
+  * Tuning System (EDO): 12-TET, 31-EDO, 19-EDO, 24-EDO
+* Timbre & Mix:
+  * Piano Timbre (FM Index): 0.0〜3.0
+  * Reverb Mix: 0%〜100%
+  * Drone Level: 0%〜200%
+  * Noise Level: 0%〜200%
+* Interaction:
+  * Mic Sensitivity: 0.1x〜3.0x
+  * Pitch Tracking Match %: 0%〜100%
+  * Ducking Depth: 0dB〜-30dB
